@@ -30,7 +30,6 @@ Threads when non-blocking reactions are needed.")
  (tags ("gui"))
  (depends
   (tsdl-image (>= 0.3.0))
-  (tsdl-ttf (>= 0.3))
   (ocaml (>= 4.08.0))
   (tsdl (>= 0.9.7)))
 )  

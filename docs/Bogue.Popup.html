@@ -23,7 +23,10 @@
 
 <pre><span id="MODULEPopup"><span class="keyword">module</span> Popup</span>: <code class="code"><span class="keyword">sig</span></code> <a href="Bogue.Popup.html">..</a> <code class="code"><span class="keyword">end</span></code></pre><div class="info module top">
 <div class="info-desc">
-<p>Put layouts on top of others</p>
+<p>Put layouts on top of others.</p>
+
+<p><em>Warning:</em> For all functions in this module, the destination layout must be a
+   house, not a single resident.</p>
 
 <h6 id="5_graphbpopuphtmlDependencygraph"><a href="graph-b_popup.html">Dependency graph</a></h6></div>
 </div>
@@ -32,7 +35,7 @@
 <pre><span id="VALadd_screen"><span class="keyword">val</span> add_screen</span> : <code class="type">?color:<a href="Bogue.Draw.html#TYPEcolor">Draw.color</a> -> <a href="Bogue.Layout.html#TYPEt">Layout.t</a> -> <a href="Bogue.Layout.html#TYPEt">Layout.t</a></code></pre><div class="info ">
 <div class="info-desc">
 <p>Add a screen on top of the layout. This can be useful to make the whole
-     layout clickable as a whole.</p>
+      layout clickable as a whole.</p>
 </div>
 <ul class="info-attributes">
 <li><b>Returns</b> the screen.</li>
@@ -51,21 +54,30 @@
 </ul>
 </div>
 
-<pre><span id="VALinfo"><span class="keyword">val</span> info</span> : <code class="type">?w:int -> ?h:int -> ?button:string -> string -> <a href="Bogue.Layout.html#TYPEt">Layout.t</a> -> unit</code></pre><div class="info ">
+<pre><span id="VALinfo"><span class="keyword">val</span> info</span> : <code class="type">?w:int -><br>       ?h:int -><br>       ?button_w:int -><br>       ?button_h:int -> ?button:string -> string -> <a href="Bogue.Layout.html#TYPEt">Layout.t</a> -> unit</code></pre><div class="info ">
 <div class="info-desc">
 <p>Add to the layout a modal popup with a text and a close button. By
-     default, <code class="code">button=<span class="string">"Close"</span></code>.</p>
+      default, <code class="code">button=<span class="string">"Close"</span></code>. Use the optional parameters <code class="code">w,h</code> to impose the
+      size of the button.</p>
 </div>
 </div>
 
-<pre><span id="VALyesno"><span class="keyword">val</span> yesno</span> : <code class="type">?w:int -><br>       ?h:int -><br>       ?yes:string -><br>       ?no:string -><br>       yes_action:(unit -> unit) -><br>       no_action:(unit -> unit) -> string -> <a href="Bogue.Layout.html#TYPEt">Layout.t</a> -> unit</code></pre><div class="info ">
+<pre><span id="VALyesno"><span class="keyword">val</span> yesno</span> : <code class="type">?w:int -><br>       ?h:int -><br>       ?button_w:int -><br>       ?button_h:int -><br>       ?yes:string -><br>       ?no:string -><br>       yes_action:(unit -> unit) -><br>       no_action:(unit -> unit) -> string -> <a href="Bogue.Layout.html#TYPEt">Layout.t</a> -> unit</code></pre><div class="info ">
 <div class="info-desc">
 <p>Add to the layout a modal popup with two yes/no buttons. By default,
-      <code class="code">yes=<span class="string">"Yes"</span></code> and <code class="code">no=<span class="string">"No"</span></code>.</p>
+      <code class="code">yes=<span class="string">"Yes"</span></code> and <code class="code">no=<span class="string">"No"</span></code>. Use the optional parameters <code class="code">w,h</code> to impose the
+      common size of the two buttons.</p>
 </div>
 </div>
 
-<pre><span id="VALtwo_buttons"><span class="keyword">val</span> two_buttons</span> : <code class="type">?w:int -><br>       ?h:int -><br>       label1:string -><br>       label2:string -><br>       action1:(unit -> unit) -><br>       action2:(unit -> unit) -> <a href="Bogue.Layout.html#TYPEt">Layout.t</a> -> <a href="Bogue.Layout.html#TYPEt">Layout.t</a> -> unit</code></pre>
+<pre><span id="VALone_button"><span class="keyword">val</span> one_button</span> : <code class="type">?w:int -><br>       ?h:int -><br>       ?on_close:(unit -> unit) -><br>       button:string -> dst:<a href="Bogue.Layout.html#TYPEt">Layout.t</a> -> <a href="Bogue.Layout.html#TYPEt">Layout.t</a> -> unit</code></pre><div class="info ">
+<div class="info-desc">
+<p>Here the optional parameters <code class="code">w</code> and <code class="code">h</code> set the width and height of the
+      button.</p>
+</div>
+</div>
+
+<pre><span id="VALtwo_buttons"><span class="keyword">val</span> two_buttons</span> : <code class="type">?w:int -><br>       ?h:int -><br>       label1:string -><br>       label2:string -><br>       action1:(unit -> unit) -><br>       action2:(unit -> unit) -> content:<a href="Bogue.Layout.html#TYPEt">Layout.t</a> -> <a href="Bogue.Layout.html#TYPEt">Layout.t</a> -> unit</code></pre>
 <pre><code><span id="TYPEposition"><span class="keyword">type</span> <code class="type"></code>position</span> = </code></pre><table class="typetable">
 <tr>
 <td align="left" valign="top" >

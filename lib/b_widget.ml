@@ -1,4 +1,6 @@
-(* each widget contains its personal data, and the list of connections from
+(* This file is part of BOGUE, by San Vu Ngoc *)
+
+(* Each widget contains its personal data, and the list of connections from
    it *)
 
 open Tsdl
@@ -13,6 +15,7 @@ module Draw = B_draw
 module Empty = B_empty
 module Image = B_image
 module Box = B_box
+module Sdl_area = B_sdl_area
 module Label = B_label
 module Button = B_button
 module Slider = B_slider
@@ -30,13 +33,15 @@ type kind =
   | Image of Image.t
   | Slider of Slider.t
   | TextInput of Text_input.t
+  | SdlArea of Sdl_area.t
 
-(** what to do when the same action (= same connection id) is already running ? *)
+(* What to do when the same action (= same connection id) is already running? *)
 type action_priority =
-  | Forget (** discard the new action *)
-  | Join (** execute the new after the first one has completed *)
-  | Replace (** kill the first action (if possible) and execute the second one *)
-  | Main (** run in the main program. So this is blocking for all subsequent actions *)
+  | Forget (* discard the new action *)
+  | Join (* execute the new after the first one has completed *)
+  | Replace (* kill the first action (if possible) and execute the second one *)
+  | Main (* run in the main program. So this is blocking for all subsequent
+            actions *)
 
 type active = {
     thread : Thread.t;
@@ -60,20 +65,22 @@ and connection = {
 
 and t = {
   kind : kind;
-  (*  receiver : action Event.channel; *) (* TODO: pas nécessaire ? *)
+  (* receiver : action Event.channel; *) (* TODO: pas nécessaire ? *)
   actives : (active list) Var.t;
-  (** all active threads/connections for this widget. Most recent come first in
-      the list *)
+  (* [actives] lists all active threads/connections for this widget. Most recent
+     come first in the list *)
   mutable connections : connection list;
-  (** all possible connections from this widget. In the order to be
-      executed. Particular case: the local actions are connection from
-      and to the same widget. *)
+  (* the [connections] field lists all possible connections from this widget. In
+     the order to be executed. Particular case: the local actions are connection
+     from and to the same widget. *)
   (* mutable à cause de définition cyclique *)
   wid : int;
-  mutable fresh : bool Var.t; (* is the display up-to-date ? *)
+  mutable fresh : bool Var.t; (* is the display up-to-date? *)
   (* not really used anymore. TODO: check if this flag is still used *)
-  mutable room_id : int option; (* will be filled by the room id when inserted in that room *)
-  mutable cursor : Sdl.cursor option (* use this to override the default mouse cursor *)
+  mutable room_id : int option;
+  (* [room_id] will be filled by the room id when inserted in that room *)
+  mutable cursor : Sdl.cursor option
+  (* use [cursor] to override the default mouse cursor *)
 }
 
 let draw_boxes = ref false
@@ -102,7 +109,19 @@ end
 module WHash = Weak.Make(Hash)
 let widgets_wtable = WHash.create 100
 
-(* When to use this ??? *)
+let string_of_kind = function
+  | Empty _ -> "Empty"
+  | Box _ -> "Box"
+  | Button _ -> "Button"
+  | Check _ -> "Check"
+  | TextDisplay _ -> "TextDisplay"
+  | Label l -> "Label [" ^ xterm_red ^ (Label.text l) ^ xterm_nc ^ "]"
+  | Image _ -> "Image"
+  | Slider _ -> "Slider"
+  | TextInput _ -> "TextInput"
+  | SdlArea _ -> "SdlArea"
+
+(* When to use this??? *)
 (* in particular, when this function is called, the widget w in principle has
    already been removed from widgets_wtable *)
 let free w =
@@ -117,6 +136,7 @@ let free w =
   | Label l -> Label.free l
   | Slider s -> Slider.free s
   | TextInput ti -> Text_input.free ti
+  | SdlArea a -> Sdl_area.free a
 
 let is_fresh w = Var.get w.fresh
 
@@ -174,7 +194,7 @@ let unload_texture w =
   | Label l -> Label.unload l
   | Slider s -> Slider.unload s
   | TextInput ti -> Text_input.unload ti
-
+  | SdlArea a -> Sdl_area.unload a
 
 let default_size w =
   match w.kind with
@@ -187,6 +207,7 @@ let default_size w =
   | Button b -> Button.size b
   | Slider s -> Slider.size s
   | TextInput ti -> Text_input.size ti
+  | SdlArea a -> Sdl_area.size a
 
 let size = default_size
 
@@ -201,6 +222,7 @@ let resize w size =
   | Image i -> Image.resize size i
   | Slider s -> Slider.resize size s
   | TextInput ti -> Text_input.resize size ti
+  | SdlArea a -> Sdl_area.resize size a
 
 let get_cursor w =
   default w.cursor
@@ -209,6 +231,7 @@ let get_cursor w =
      | Box _
      | Label _
      | TextDisplay _
+     | SdlArea _
      | Image _ -> go (Draw.create_system_cursor Sdl.System_cursor.arrow)
      | Button _
      | Check _
@@ -229,11 +252,14 @@ let display canvas layer w geom =
     Box.display canvas layer b geom
   | Check b -> printd debug_board "check button: %b" (Check.state b);
     Check.display canvas layer b geom
+  | SdlArea a -> printd debug_board "render SDL area";
+    Sdl_area.display w.wid canvas layer a geom
   | Button b -> printd debug_board "button [%s]" (Button.text b);
     Button.display canvas layer b geom
-  | TextDisplay td -> printd debug_board "text display: %s" (Text_display.text td);
+  | TextDisplay td ->
+    printd debug_board "text display: %s" (Text_display.text td);
     Text_display.display canvas layer td geom
-  | Image img -> printd debug_board "image: %s" (Var.get img.Image.file);
+  | Image img -> printd debug_board "image: %s" (Image.get_file img);
     Image.display canvas layer img geom
   | Label l -> printd debug_board "label: %s" (Label.text l);
     Label.display canvas layer l geom
@@ -252,7 +278,8 @@ let update w =
   Var.set w.fresh false;
   (* if !draw_boxes then Trigger.(push_event refresh_event) *)
   (* else *)
-  Trigger.push_redraw w.wid;; (*TODO... use wid et/ou window_id...*)
+  Trigger.push_redraw w.wid
+(* TODO... use wid et/ou window_id...*)
 (* refresh is not used anymore. We redraw everyhting at each frame ... *)
 (* before, it was not very subtle either: if !draw_boxes is false, we ask for
    clearing the background before painting. Maybe some widgets can update
@@ -268,8 +295,6 @@ let update w =
    cas, ne pas déclancher plein de ces connexions à la suite... elles
    s'attendent ! *)
 let connect source target action ?(priority=Forget) ?(update_target=true) ?join triggers =
-  if update_target && (List.mem Sdl.Event.user_event triggers)
-  then printd debug_warning "one should not 'connect' with 'update_target'=true if the trigger list contains 'user_event'. It may cause an infinite display loop";
   let action = if update_target
     then fun w1 w2 ev -> (action w1 w2 ev; update w2) (* TODO ajouter Trigger.will_exit ev ?? *)
     else action in
@@ -300,47 +325,73 @@ let connect_main = connect ~priority:Main
 let connections t =
   t.connections
 
-(* TODO: vérifier qu'on n'ajoute pas deux fois la même *)
 (* TODO à faire automatiquement après "connect" ? *)
+(* Not thread safe, should be used only in main thread. *)
 let add_connection w c =
-  w.connections <- List.rev (c :: List.rev w.connections)
+  if List.exists (fun cc -> cc.id = c.id) w.connections
+  then printd (debug_error + debug_user) "Connection is already present in widget"
+  else w.connections <- List.rev (c :: List.rev w.connections)
 
-(* TODO: remove connection *)
+(* Remove connection. Not thread safe, should be used only in main thread. *)
+let remove_connection w c =
+  let clist = List.filter (fun cc -> cc.id <> c.id) w.connections in
+  if List.compare_lengths clist w.connections <> 0
+  then w.connections <- clist
+  else printd (debug_error + debug_user)
+      "Cannot remove connection because it is not present in the widget."
+
+(* Remove all connection that respond to the given trigger (=event) *)
+let remove_trigger w tr =
+  let clist = List.filter (fun cc -> not (List.mem tr cc.triggers)) w.connections in
+  if List.compare_lengths clist w.connections <> 0
+  then w.connections <- clist
+  else printd (debug_warning + debug_user)
+      "[remove_trigger] There is no trigger of that kind in the list of connections."
+
 let get_box w =
   match w.kind with
-    | Box b -> b
-    | _ -> failwith "Expecting a box"
+  | Box b -> b
+  | _ -> invalid_arg "Expecting a box, not a %s" (string_of_kind w.kind)
 
 let get_check w =
   match w.kind with
     | Check b -> b
-    | _ -> failwith "Expecting a check box"
+    | _ -> invalid_arg "Expecting a check box, not a %s" (string_of_kind w.kind)
 
 let get_label w =
  match w.kind with
     | Label l -> l
-    | _ -> failwith "Expecting a label"
+    | _ -> invalid_arg "Expecting a label, not a %s" (string_of_kind w.kind)
 
 let get_button w =
   match w.kind with
     | Button b -> b
-    | _ -> failwith "Expecting a button"
+    | _ -> invalid_arg "Expecting a button, not a %s" (string_of_kind w.kind)
 
 let get_slider w =
  match w.kind with
     | Slider s -> s
-    | _ -> failwith "Expecting a slider"
+    | _ -> invalid_arg "Expecting a slider, not a %s" (string_of_kind w.kind)
 
 let get_text_display w =
  match w.kind with
     | TextDisplay td -> td
-    | _ -> failwith "Expecting a text display"
-
+    | _ -> invalid_arg "Expecting a text display, not a %s" (string_of_kind w.kind)
 
 let get_text_input w =
  match w.kind with
     | TextInput ti -> ti
-    | _ -> failwith "Expecting a text input"
+    | _ -> invalid_arg "Expecting a text input, not a %s" (string_of_kind w.kind)
+
+let get_image w =
+ match w.kind with
+   | Image im -> im
+   | _ -> invalid_arg "Expecting an image, not a %s" (string_of_kind w.kind)
+
+let get_sdl_area w =
+  match w.kind with
+  | SdlArea a -> a
+  | _ -> invalid_arg "Expecting an Sdl_area, not a %s" (string_of_kind w.kind)
 
 (** creation of simple widgets *)
 let check_box ?state ?style () =
@@ -373,34 +424,42 @@ let lines_display ?w ?h lines =
 let verbatim text =
   create_empty (TextDisplay (Text_display.create_verbatim text))
 
-let html text =
-  create_empty (TextDisplay (Text_display.create_from_html text))
+let html ?w ?h text =
+  create_empty (TextDisplay (Text_display.create_from_html ?w ?h text))
 
-let box ?w ?h ?background ?border ?shadow () =
-  create_empty (Box (Box.create ?width:w ?height:h ?background ?border ?shadow ()))
+let box ?w ?h ?style () =
+  create_empty (Box (Box.create ?width:w ?height:h ?style ()))
 
-let label ?size ?fg ?font text =
-  create_empty (Label (Label.create ?size ?fg ?font text))
+let sdl_area ~w ~h ?style () =
+  create_empty (SdlArea (Sdl_area.create ~width:w ~height:h ?style ()))
+
+let label ?size ?fg ?font ?align text =
+  create_empty (Label (Label.create ?size ?fg ?font ?align text))
 
 (* alias for fontawesome icon labels *)
 let icon ?size ?fg name =
   create_empty (Label (Label.icon ?size ?fg name))
 
-let image ?w ?h ?bg ?noscale file =
-  create_empty (Image (Image.create ?width:w ?height:h ?bg ?noscale file))
+let image ?w ?h ?bg ?noscale ?angle file =
+  create_empty (Image (Image.create ?width:w ?height:h ?bg ?noscale ?angle file))
 
 let image_from_svg ?w ?h ?bg file =
   let svg = Draw.convert_svg ?w ?h file in
   let w,h = Draw.unscale_size (Draw.image_size svg) in
   image ~w ~h ?bg svg
 
+let image_copy ?rotate w =
+  create_empty (Image (Image.copy ?rotate (get_image w)))
+
+(* action is executed "on release" (mouse or keyboard). If you need an action
+   that depends on the button itself, use on_button_release instead.  *)
 let button ?(kind = Button.Trigger) ?label ?label_on ?label_off
     ?fg ?bg_on ?bg_off ?bg_over ?state
-    ?border_radius ?border_color text =
+    ?border_radius ?border_color ?action text =
   let b = create_empty
       (Button (Button.create ?label ?label_on ?label_off ?fg
                  ?bg_on ?bg_off ?bg_over
-                 ?border_radius ?border_color ?state text)) in
+                 ?border_radius ?border_color ?state ?action kind text)) in
   let press = fun _ _ _ -> Button.press (get_button b) in
   let c = connect_main b b press Trigger.buttons_down in
   add_connection b c;
@@ -416,8 +475,10 @@ let button ?(kind = Button.Trigger) ?label ?label_on ?label_off
   let c = connect_main b b (fun b _ _ -> Button.mouse_leave (get_button b))
       [Trigger.mouse_leave] in
   add_connection b c;
+  let c = connect_main b b (fun b _ ev -> Button.receive_key (get_button b) ev)
+      [Trigger.key_down; Trigger.key_up] in
+  add_connection b c;
   b
-(* TODO: actions *)
 
 (* use ~lock if the user is not authorized to slide *)
 let slider ?(priority=Main) ?step ?value ?kind ?var ?length ?thickness
@@ -518,6 +579,11 @@ let get_state w =
   | _ -> (printd debug_error "This type of widget does not have a state function";
           false)
 
+let set_state w s =
+  match w.kind with
+  | Button b -> Button.set b s
+  | Check c -> Check.set c s
+  | _ -> (printd debug_error "Cannot set the state for this type of widget.")
 
 (** creation of combined widgets *)
 let check_box_with_label text =
@@ -533,8 +599,8 @@ let check_box_with_label text =
 (* some useful connections *)
 (* the disadvantage is that these functions do not take advantage of the two
    widgets + event entry. Thus they are less 'functional' and require more
-   global variables. Also, they all work with "connect_main", so are ok only for
-   very fast actions. *)
+   global variables (closures). Also, they all work with "connect_main", so are
+   ok only for very fast actions. *)
 
 let mouse_over ?(enter = nop) ?(leave = nop) w =
   let c = connect w w (fun w _ _ -> enter w) [Trigger.mouse_enter] in
@@ -547,7 +613,15 @@ let on_click ~click w =
   add_connection w c
 
 let on_release ~release w =
-  let c = connect_main w w (fun w _ _ -> release w) Trigger.buttons_up in
+  let c = connect_main w w (fun w _ _ -> release w)
+      Trigger.buttons_up in
+  add_connection w c
+
+let on_button_release ~release w =
+  let c = connect_main w w (fun w _ ev ->
+      if Trigger.of_event ev <> Trigger.key_up
+      || Button.check_key (get_button w) ev
+      then release w) (Trigger.key_up :: Trigger.buttons_up) in
   add_connection w c
 
 (****)
@@ -625,10 +699,10 @@ let wake_up event c =
   if List.mem (Trigger.of_event event) c.triggers then
     begin
       printd debug_thread "Activating connection #%d" c.id;
-      (* TODO add a more precise ~test before launching the thread ? *)
+      (* TODO add a more precise ~test before launching the thread? *)
       if c.priority = Main then c.action c.source c.target event
-      (* = direct action, no thread !. Should we still add it to the active list
-         ? *)
+      (* = direct action, no thread! Should we still add it to the active list?
+      *)
       else begin
         let action = fun w1 w2 ev ->
           c.action w1 w2 ev;
@@ -642,7 +716,7 @@ let wake_up event c =
             let action = fun w1 w2 ev -> (Thread.join a.thread; action w1 w2 ev) in
             add_action c action event
           | Replace, Some a -> begin
-              (*printd debug_thread "Killing connection #%d" a.connect_id;*)
+              (* printd debug_thread "Killing connection #%d" a.connect_id;*)
               (* Thread.kill a.thread; *) (* Thread.kill is in fact NOT
                                              implemented... ! *)
               terminate a;
@@ -666,27 +740,39 @@ let remove_active_connections widget =
 
 (*******************)
 
-(* some widgets directly react to a click event to activate themselves. Some,
+(* Some widgets directly react to a click event to activate themselves. Some,
    like text_input, even react to the TAB key. In fact, keyboard_focus is
-   treated globally by the main loop, therefore one could (should ?) rely on
+   treated globally by the main loop, therefore one could (should?) rely on
    this function below instead of adding new reactions to TAB & click *)
 let set_keyboard_focus w =
   match w.kind with
   | TextInput _ -> () (* already done by the widget *)
   | Slider s -> Slider.set_focus s
+  | Button b -> Button.set_focus b
   | _ -> ()
 
 let remove_keyboard_focus w =
   match w.kind with
   | TextInput ti -> Text_input.stop ti
   | Slider s -> Slider.unfocus s
+  | Button b -> Button.unfocus b
   | _ -> ()
-
 
 let guess_unset_keyboard_focus w =
   match w.kind with
   | TextInput _ -> Some false
   | Slider _ -> Some false
+  | Button _ -> Some false
   | _ -> None
-           (* TODO: buttons could have keyboard focus... to activate them with
-              TAB or ENTER or SPACE... *)
+
+(*************************)
+(* Some examples of "pure" actions (actions that don't depend on external
+   variables) *)
+
+let copy_text w1 w2 _ =
+  let text = get_text w1 in
+  set_text w2 text
+
+let map_text f w1 w2 _ =
+  let text = get_text w1 in
+  set_text w2 (f text)

@@ -26,6 +26,7 @@ module Var = B_var
 module Trigger =  B_trigger
 module Draw = B_draw
 module Box = B_box
+module Style = B_style
 
 let update widget room =
   let renderer = Layout.renderer room in
@@ -48,12 +49,13 @@ let update widget room =
 
   let box = Widget.get_box widget in
   do_option (Var.get box.Box.render) Draw.forget_texture;
-  Var.set box.Box.render (Some target);;
+  Var.set box.Box.render (Some target)
 
 let create ?border room =
   let w,h = Layout.get_size room in
-  let box = Widget.box ~w ~h ?border () in
+  let style = Style.create ?border () in
+  let box = Widget.box ~w ~h ~style () in
   let c = Widget.connect_main box box (fun w _ _ -> update w room)
             [Trigger.startup] in
   Widget.add_connection box c;
-  box;;
+  box

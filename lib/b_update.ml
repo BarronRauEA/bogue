@@ -1,4 +1,4 @@
-(* this is where we store the widgets that receive the update event *)
+(* This is where we store the widgets that receive the update event *)
 
 (* similar to Sync.ml but we make sure there is no repeated entries in the
    queue *)
@@ -48,7 +48,7 @@ let execute_one e w =
   if w.Widget.wid = Trigger.get_update_wid e
   then (
     Widget.wake_up_all e w;
-    Trigger.push_redraw (Widget.id w) (* OK ?? *)
+    Trigger.push_redraw (Widget.id w) (* OK?? *)
   )
 
 let execute e =

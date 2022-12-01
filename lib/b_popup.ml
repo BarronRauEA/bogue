@@ -1,5 +1,5 @@
 (** put a sublayout on top of the main layout *)
-(* recall that "on top" means "insert_after" layer; change ? *)
+(* recall that "on top" means "insert_after" layer; change? *)
 
 (* TODO implement the resize function *)
 
@@ -20,7 +20,7 @@ let new_layer_above base =
 
 (* search top_layer inside the layout. *)
 (* use the global toplayer instead (Chain.last) or at least the top_layer of the
-   whole connected component ? (top_layer (Layout.top_house layout)). In fact
+   whole connected component? (top_layer (Layout.top_house layout)). In fact
    since the top_house is supposed to contain all the graphics of the window,
    and there is one layer chain per window, the two choices should give the same
    answer. Thus it's better to use Chain.last layer. OK see below ... *)
@@ -62,9 +62,11 @@ let filter_screen ?color ?layer ?keyboard_focus layout =
   printd debug_graphics "Create filter screen (%d,%d)" w h;
   let b = match color with
     | None -> Widget.empty ~w ~h ()
-    | Some color -> Widget.box ~w ~h ~background:(Style.Solid color)() in
+    | Some color ->
+      let style = Style.create ~background:(Style.Solid color)() in
+      Widget.box ~w ~h ~style () in
   let screen = (* Layout.(flat_of_w ~sep:0 layout.canvas [b]) in *)
-    Layout.(resident ~name:"filter" ?canvas:layout.canvas b) in
+    Layout.(resident ~name:"_filter" ?canvas:layout.canvas b) in
   (* Layout.(screen.geometry <- {screen.geometry with w; h}); *)
   do_option layer (Layout.set_layer screen);
   screen.Layout.keyboard_focus <- keyboard_focus;
@@ -78,7 +80,8 @@ let filter_screen ?color ?layer ?keyboard_focus layout =
 let add_screen ?(color = Draw.(transp red) (* DEBUG *) ) layout =
   let base_layer = top_layer layout in
   let screen_layer = new_layer_above base_layer in
-  let screen = filter_screen ~color ~layer:screen_layer layout in
+  let screen = filter_screen ~color ~layer:screen_layer
+      ~keyboard_focus:true layout in
   Layout.add_room ~dst:layout screen;
   Layout.resize_follow_house screen;
   screen
@@ -102,7 +105,7 @@ let attach ?bg ?(show=true) house layout =
   let top_layer = new_layer_above filter_layer in  (* eg. 30 *)
   (* We change layer for layout and all its children: *)
   Layout.global_set_layer layout top_layer;
-  let screen = filter_screen ?color:bg house in
+  let screen = filter_screen ?color:bg ~keyboard_focus:true house in
   Layout.set_layer screen filter_layer;
   Layout.add_room ~dst:house screen;
   Layout.scale_resize screen;
@@ -120,61 +123,83 @@ let attach ?bg ?(show=true) house layout =
 (* some predefined popup designs *)
 
 let slide_in ~dst content buttons =
-  let border = Style.(border (line ~color:Draw.(opaque grey) ())) in
-  let shadow = Style.shadow () in
-  let background = Layout.Box
-                     (Box.create ~shadow
-                        ~background:(Style.Solid Draw.(opaque (pale grey)))
-                        ~border ()) in
+  let style = Style.(create
+                       ~border:(mk_border (mk_line ~color:Draw.(opaque grey) ()))
+                       ~shadow:(mk_shadow ())
+                       ~background:(Solid Draw.(opaque (pale grey))) ()) in
+  let background = Layout.Box (Box.create ~style ()) in
   let popup = Layout.tower ~align:Draw.Center ~background [content; buttons] in
   let screen = attach ~bg:(Draw.(set_alpha 200 (pale grey))) dst popup in
   (* Layout.slide_in ~dst popup; *)
   popup, screen
 
-let one_button ?w ?h ~button ~dst content =
+let one_button ?w ?h ?on_close ~button ~dst content =
   let close_btn = Widget.button ~border_radius:3 button in
   let popup, screen = slide_in ~dst content (Layout.resident ?w ?h close_btn) in
   let close _ =
     Layout.hide popup;
     Layout.hide screen;
-    Layout.fade_out screen in
-  Widget.on_release ~release:close close_btn
+    Layout.fade_out screen;
+    let _ = Timeout.add Layout.default_duration (fun () ->
+        Layout.detach screen;
+        Layout.detach popup) in
+    do_option on_close run in
+  Widget.on_button_release ~release:close close_btn
 
 (* a text and a close button. *)
 (* TODO the ?w and ?h define the size of the text_display (not automatically
    detected). It should also include the size of the close button *)
-let info ?w ?h ?(button="Close") text dst =
+let info ?w ?h ?button_w ?button_h ?(button="Close") text dst =
   let td = Widget.text_display ?w ?h text
            |> Layout.resident in
-  one_button ?w ?h ~button ~dst td
+  one_button ?w:button_w ?h:button_h ~button ~dst td
 
 (* ?w and ?h to specify a common size for both buttons *)
 let two_buttons ?w ?h ~label1 ~label2 ~action1 ~action2
-    content dst =
+    ~content dst =
   let btn1 = Widget.button ~border_radius:3 label1 in
   let btn2 = Widget.button ~border_radius:3 label2 in
-  let buttons = Layout.(flat ~vmargin:0 ~sep:(2*Theme.room_margin) [resident ?w ?h btn1; resident ?w ?h btn2]) in
+  let buttons = Layout.(flat ~vmargin:0 ~sep:(2*Theme.room_margin)
+                          [resident ?w ?h btn1; resident ?w ?h btn2]) in
   let popup, screen = slide_in ~dst content buttons in
   let close () =
+    let open Layout in
+    let _ = Timeout.add Layout.default_duration (fun () ->
+        Layout.detach screen;
+        Layout.detach popup) in
     (*Layout.hide popup;*)
-    Layout.fade_out ~hide:true popup;
+    fade_out ~hide:true popup;
     (*Layout.hide screen*)
-    Layout.fade_out ~hide:true screen in
+    fade_out ~hide:true screen
+
+  in
   let do1 _ =
     close ();
     action1 () in
   let do2 _ =
     close ();
     action2 () in
-  Widget.on_release ~release:do1 btn1;
-  Widget.on_release ~release:do2 btn2
+  Widget.on_button_release ~release:do1 btn1;
+  Widget.on_button_release ~release:do2 btn2
 
-let yesno ?w ?h ?(yes="Yes") ?(no="No") ~yes_action ~no_action text dst =
-  let td = Widget.text_display ?w ?h text
-           |> Layout.resident in
-  two_buttons ?w ?h ~label1:yes ~label2:no ~action1:yes_action ~action2:no_action
-    td dst
-
+let yesno ?w ?h ?button_w ?button_h ?(yes="Yes") ?(no="No")
+    ~yes_action ~no_action text dst =
+  let dst = if Layout.has_resident dst
+    then begin
+      printd (debug_error + debug_user)
+        "The [yesno] popup requires a destination layout which is not a single \
+         resident (as %s). We're trying anyways, but please correct your code."
+        (Layout.sprint_id dst);
+      match Layout.guess_top () with
+      | Some r -> Layout.top_house r
+      | None -> failwith "Cannot find a valid layout!"
+    end
+    else dst in
+  let content = Widget.text_display ?w ?h text
+                |> Layout.resident in
+  two_buttons ?w:button_w ?h:button_h ~label1:yes ~label2:no
+    ~action1:yes_action ~action2:no_action
+    ~content dst
 
 (* tooltips *)
 
@@ -197,12 +222,12 @@ type position =
 
 let tooltip ?background ?(position = Below) text ~target widget layout =
   let t = Widget.label ~size:Theme.small_font_size text in
-  let border = Style.(border ~radius:5 (line ())) in
   let background = match background with
     | Some b -> b
-    | None -> Layout.Box
-                (Box.create ~background:(Style.Solid Draw.(opaque (pale grey)))
-                   ~border ()) in
+    | None ->
+      let style = Style.(create ~border:(mk_border ~radius:5 (mk_line ()))
+                           ~background:(Solid Draw.(opaque (pale grey))) ()) in
+      Layout.Box (Box.create ~style ()) in
   let tooltip = Layout.tower_of_w ~sep:3 ~background [t] in
   attach_on_top layout tooltip;
   tooltip.Layout.show <- false;
@@ -210,25 +235,25 @@ let tooltip ?background ?(position = Below) text ~target widget layout =
   let show_tooltip _ _ _ =
     let open Layout in
     if not tooltip.show then begin
-        let x,y = pos_from layout target in
-        (* print_endline (Printf.sprintf "(%i,%i)" x y); *)
-        let x',y' = match position with
-          | Below -> x, y+(height target)+2
-          | Above -> x, y-(height tooltip)-2
-          | LeftOf -> x-(width tooltip)-2, y
-          | RightOf -> x+(width target)+2, y
-          | Mouse -> let x,y = Trigger.mouse_pos () in (x+8,y+8) in
-        sety tooltip y';
-        setx tooltip x';
-        tooltip.show <- true;
-        Layout.fade_in tooltip
-      end in
+      let x,y = pos_from layout target in
+      (* print_endline (Printf.sprintf "(%i,%i)" x y); *)
+      let x',y' = match position with
+        | Below -> x, y+(height target)+2
+        | Above -> x, y-(height tooltip)-2
+        | LeftOf -> x-(width tooltip)-2, y
+        | RightOf -> x+(width target)+2, y
+        | Mouse -> let x,y = Mouse.pos () in (x+8,y+8) in
+      sety tooltip y';
+      setx tooltip x';
+      tooltip.show <- true;
+      Layout.fade_in tooltip
+    end in
   let to_show = ref true in
   let hide_tooltip b =
     to_show := false;
     ignore (Timeout.add 200 (fun () ->
-                tooltip.Layout.show <- !to_show;
-                Trigger.push_redraw (Widget.id b)))
+        tooltip.Layout.show <- !to_show;
+        Trigger.push_redraw (Widget.id b)))
   in
   let enter _ =
     if tooltip.Layout.show

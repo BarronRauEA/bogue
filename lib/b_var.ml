@@ -51,13 +51,13 @@ let release v =
 
 (* Execute an action on the given variable if it is not locked by *another*
    thread. Can be used in recursions. *)
-let protect_fn v action =
+let protect_do v action =
   let was_free = Mutex.try_lock v.mutex in
   if was_free then begin (* this should be the vast majority of cases *)
       (* The variable is now locked *)
       if !debug then assert (v.thread_id = None); (* just for debugging *)
       v.thread_id <- Some Thread.(id (self ()));
-      let result = action () in
+      let result = try action () with exn -> release v; raise exn in
       release v;
       (* The variable is now unlocked *)
       result
@@ -71,10 +71,13 @@ let protect_fn v action =
       Mutex.lock v.mutex;
       v.thread_id <- Some Thread.(id (self ()));
       printd debug_thread "...ok, the variable was unlocked, we proceed.";
-      let result = action () in
+      let result = try action () with exn -> release v; raise exn in
       release v;
       result
     end
+
+let protect_fn v f =
+  protect_do v (fun () -> f v.data)
 
 (* usually we don't need to protect when getting the value. (But if the value
    itself is a reference, then one should explicitely protect the target when
@@ -139,8 +142,7 @@ let set_init i f =
   set i.var None
 
 let init_get i =
-  protect_fn i.var (fun () ->
-      match unsafe_get i.var with
+  protect_fn i.var (function
       | None -> let data = i.init () in set i.var (Some data); data
       | Some d -> d)
 

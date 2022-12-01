@@ -12,6 +12,8 @@ module Label = B_label
 
 (* TODO: use Tsdl_extra.TTF.style *)
 
+(* TODO horiz. align text (Min, Center or Max) *)
+
 type entity =
   | Word of string
   | Space
@@ -23,7 +25,9 @@ type entity =
 type words = entity list
 
 let example : words = let open Ttf.Style in
-  [ Word "Hello"; Space; Word "I"; Space; Word "am"; Space; Style bold; Word "bold"; Style normal; Space; Word "and"; Space; Style italic; Word "italic." ]
+  [ Word "Hello"; Space; Word "I"; Space; Word "am"; Space;
+    Style bold; Word "bold"; Style normal; Space; Word "and"; Space;
+    Style italic; Word "italic." ]
 
 type t =
     { paragraphs : (words list) Var.t;
@@ -36,7 +40,7 @@ type t =
       mutable h: int option; (* height in pixels. See above. *)
     }
 
-let default_font = Label.File Theme.text_font
+let default_font () = Label.File !Theme.text_font
 
 let unload td =
     match Var.get td.render with
@@ -50,8 +54,8 @@ let unload td =
 let free = unload
 (* TODO free font ? *)
 
-(* determine the style at the end of the entity list, assuming that the initial
-   style is normal *)
+(* Determine the style at the end of the entity list, assuming that the initial
+   style is normal. *)
 (* TODO: be careful when using this, maybe the initial normal style is a wrong
    assumption. This should be ok if the user may only concatenate entity lists,
    not split them. *)
@@ -81,13 +85,9 @@ let set_style style words =
 
 
 let bold = set_style Ttf.Style.bold
-
 let italic = set_style Ttf.Style.italic
-
 let normal = set_style Ttf.Style.normal
-
 let underline = set_style Ttf.Style.underline
-
 let strikethrough = set_style Ttf.Style.strikethrough
 
 (** convert tabs '\t' in a string to the required number of spaces *)
@@ -144,10 +144,11 @@ let ( ++ ) = append
 (*   [para "Hello"; para "World"]  *)
 let page list : words list = list
 
-let create ?(size = Theme.text_font_size) ?w ?h ?(font = default_font)
+let create ?(size = Theme.text_font_size) ?w ?h ?(font = default_font ())
       paragraphs =
   Draw.ttf_init ();
-  { paragraphs = Var.create (List.rev ([Style Ttf.Style.normal] :: (List.rev paragraphs))); (* we add normal style at the end *)
+  { paragraphs = Var.create (List.rev ([Style Ttf.Style.normal] :: (List.rev paragraphs)));
+    (* : we add normal style at the end *)
     render = Var.create None;
     font = Var.create font;
     size; w; h}
@@ -161,12 +162,12 @@ let paragraphs_of_string text =
 let paragraphs_of_lines lines =
   List.map split_line lines
 
-let create_from_string ?(size = Theme.text_font_size) ?w ?h ?(font = default_font) text =
+let create_from_string ?(size = Theme.text_font_size) ?w ?h ?(font = default_font ()) text =
   let paragraphs = paragraphs_of_string text in
   create ~size ?w ?h ~font paragraphs
 
 
-let create_from_lines ?(size = Theme.text_font_size) ?w ?h ?(font = default_font) lines =
+let create_from_lines ?(size = Theme.text_font_size) ?w ?h ?(font = default_font ()) lines =
   let paragraphs = paragraphs_of_lines lines in
   create ~size ?w ?h ~font paragraphs
 
@@ -237,7 +238,7 @@ let paragraphs_of_html src =
 (* *** *)
 
 let create_from_html ?(size = Theme.text_font_size) ?w ?h
-    ?(font = default_font) html =
+    ?(font = default_font ()) html =
   let paragraphs = paragraphs_of_html html in
   create ~size ?w ?h ~font paragraphs
 
@@ -325,7 +326,7 @@ let display canvas layer td g =
     | None ->
       begin
         let font = get_font td in
-        let fg = opaque text_color in
+        let fg = opaque !text_color in
         let lineskip = Ttf.font_line_skip font in
         let space = fst (Label.physical_size_text font " ") in (* idem *)
         let target_surf = create_surface ~renderer:canvas.renderer g.w g.h in
@@ -345,9 +346,8 @@ let display canvas layer td g =
                   free_surface surf;
                   (* this word will hence be rendered twice. This could be
                      optimized of course. *)
-                  loop list 0 (dy + lineskip);
+                  loop list 0 (dy + lineskip); (* =we go to new line *)
                 end
-                (* =we go to new line *)
                 else (go (Sdl.blit_surface ~src:surf (Some rect) ~dst:target_surf
                             (Some (Sdl.Rect.create ~x:dx ~y:dy ~w:tw ~h:th)));
                       free_surface surf;

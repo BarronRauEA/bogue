@@ -1,5 +1,5 @@
 (* b_theme.ml : theme variables *)
-(* This file is part of BOGUE. San Vu Ngoc, 2019 *)
+(* This file is part of BOGUE.  *)
 open B_utils
 module Utf8 = B_utf8
 
@@ -22,7 +22,8 @@ DIR = /home/john/.config/bogue/themes
 
 *)
 
-let this_version = "20211205"  (* see VERSION file *)
+let this_version = "20221127"  (* see VERSION file *)
+(* Versions are compared using usual (lexicographic) string ordering. *)
 
 let default_vars = [
     (* Debug: *)
@@ -33,17 +34,18 @@ let default_vars = [
     "DIR", "";
     (* The chosen theme: *)
     "THEME", "default"; (* It must be a subdirectory of DIR: *)
-    (* The window background image: *)
-    "BACKGROUND", "file:background.png"; (* if is starts with "/" it is an absolute path. Otherwise, it is a file path inside THEME. *)
+    (* The window background image (eg: "file:background.png") or color: *)
+    "BACKGROUND", "color:white"; (* if is starts with "/" it is an absolute path. Otherwise, it is a file path inside THEME. *)
     (* This background color should be clearly visible over the BACKGROUND *)
     "BG_COLOR", "lightsteelblue";
     (* Color for active or inactive button *)
     "BUTTON_COLOR_ON", "darkturquoise";
     "BUTTON_COLOR_OFF", "steelblue";
-    (* The "checked" image: either image or fa icon, eg. "fa:check-square-o" *)
-    "CHECK_ON", "check_on.png";
-    (* The "unchecked" image: (eg: "fa:square-o") *)
-    "CHECK_OFF", "check_off.png";
+    (* The "checked" image: either image (eg. "check_on.png") or fa icon,
+       eg. "fa:check-square-o" *)
+    "CHECK_ON", "fa:check-square-o";
+    (* The "unchecked" image: (eg: "check_off.png") *)
+    "CHECK_OFF", "fa:square-o";
     (* The cursor color for text input: *)
     "CURSOR_COLOR", "#2a7da2"; (* a color identifier. Either a name like "black" or a RGB code as "#FE01BC" *)
     (* Color for unimportant things that should not be so visible *)
@@ -80,20 +82,24 @@ let default_vars = [
      to the user, and be applied only at the last moment, when dealing directly
      with rendering functions, or when creating blits. It might be a good idea
      to have a different scale per window, in case of multiple monitors. SCALE=0
-     will try to autodetect: *)
-    "SCALE", "0"; ];;
+       will try to autodetect: *)
+    "INT_SCALE", "false";
+    "SCALE", "0";
+    "OPENGL_MULTISAMPLE", "false";
+    (* https://wiki.libsdl.org/SDL_GLattr#multisample *)
+  ]
 
+let id x = x
 
-let id x = x;;
+let (//) = Filename.concat
 
-let sub_file = Filename.concat
+(* Some global environment variables *)
+let home = Sys.getenv "HOME"
 
-(* some global environment variables *)
-let home = Sys.getenv "HOME";;
-
+(* Home config directory *)
+(* TODO use https://github.com/ocamlpro/directories *)
 let conf = try Sys.getenv "XDG_CONFIG_HOME" with
-  | Not_found -> sub_file home ".config"
-  | e -> raise e;;
+  | Not_found -> home // ".config"
 
 let skip_comment buffer =
   let rec loop () =
@@ -103,10 +109,11 @@ let skip_comment buffer =
   try loop () with
   | End_of_file
   | Scanf.Scan_failure _ -> ()
-  | e -> print_endline "SCAN ERROR"; raise e;;
+  | e -> print_endline "SCAN ERROR"; raise e
 
 (* Load variables from config file. Returns an association list. Most recent
-   entries are put first, and hence will be selected first by List.assoc.*)
+   entries are put first (ie. the order is the reverse of the order of the lines
+   in the file), and hence will be selected first by List.assoc.*)
 let load_vars config_file =
   let buffer = Scanf.Scanning.from_file config_file in
   let version = try
@@ -114,6 +121,10 @@ let load_vars config_file =
     with e -> raise e in
   printd debug_io "Reading config file [%s]. BOGUE Version [%s]"
     config_file version;
+  if version > this_version
+  then printd debug_warning
+      "The version indicated in the config file (%s) is more recent than your \
+       this version of Bogue (%s)" version this_version;
   let rec loop list =
     skip_comment buffer;
     try
@@ -126,62 +137,58 @@ let load_vars config_file =
     | End_of_file -> Scanf.Scanning.close_in buffer; list
     | e -> raise e
   in
-  loop [];;
+  loop []
 
 
 (* TODO move this in an "init" function (and hence theme vars must be mutable)
-   *)
+*)
+
+let conf_file = "bogue.conf"
+
+(* We load all config files, in case of conflict, the first ones take
+   precedence. The theme config file will be loaded afterwards, see below. *)
+let all_conf_files () = [
+  conf_file;
+  home // ("." ^ conf_file);
+  conf // "bogue" // conf_file
+]
+
 let user_vars =
-  let config_file = let r = sub_file home ".bogue.conf" in
-    if Sys.file_exists r then r
-    else
-      let d = sub_file conf "bogue/bogue.conf" in
-      if Sys.file_exists d then d
-      else "" in
-  try load_vars config_file with
-  | _ (* e *) -> printd debug_error "Error loading config file %s. Using defaults" config_file;
-    default_vars;; (*raise e;;*)
+  List.map (fun file ->
+      if Sys.file_exists file then
+        try load_vars file with
+        | _ (* TODO check correct exception *) ->
+          printd (debug_error + debug_io) "Error loading config file %s." file; []
+      else (printd debug_io "Config file %s not found." file; []))
+    (all_conf_files ())
+  |> List.flatten
 
-let user_vars = ref user_vars;;
-
-(* Checks the (first) THEME entry in user's vars, and then loads & inserts the
-   theme variables *)
-let load_theme_vars dir vars =
-  let rec loop newv = function
-    | [] -> printd debug_io "No theme specified"; newv
-    | (name, value)::rest ->
-       if name = "THEME"
-       then
-         let theme_file = sub_file value "bogue.conf" in
-         let theme_vars = load_vars (sub_file dir theme_file) in
-         (name, value) :: (List.rev_append newv (List.append theme_vars rest))
-       else loop ((name, value)::newv) rest
-  in
-  loop [] vars;;
+let user_vars = ref user_vars
 
 let get_var s =
-  try let v = List.assoc s !user_vars in
-      printd debug_warning "Using %s=%s" s v;
-      v
-  with
-  | Not_found -> begin
-      try let v = List.assoc s default_vars in
-          printd debug_warning "User variable '%s' not found in config. Using default '%s'" s v; v
-      with
-      | Not_found ->
-         printd debug_error "Variable '%s' not found. Prepare for a crash." s;
-         ""
-      | e -> raise e;
-    end
-  | e -> raise e;;
+  let v = try Sys.getenv ("BOGUE_" ^ s) with
+    | Not_found ->
+      try List.assoc s !user_vars with
+      | Not_found -> begin
+          printd debug_warning
+            "User variable '%s' not found in config." s;
+          try List.assoc s default_vars with
+          | Not_found ->
+            printd debug_error "Variable '%s' not found. Prepare for a crash." s;
+            ""
+        end in
+  printd debug_warning "Using %s=%s" s v;
+  v
 
 let get_int ?(default = 0) s =
   let v = get_var s in
   try int_of_string v with
   | Failure _ -> (* "int_of_string" *)
-    printd debug_error "Expected an integer for '%s', got '%s' instead. Using default=%d." s v default;
+    printd debug_error
+      "Expected an integer for '%s', got '%s' instead. Using default=%d."
+      s v default;
     default
-  | e -> raise e;;
+  | e -> raise e
 
 let get_float ?(default = 0.) s =
   let v = get_var s in
@@ -189,103 +196,171 @@ let get_float ?(default = 0.) s =
   | Failure _ -> (* "float_of_string" *)
     printd debug_error "Expected a float for '%s', got '%s' instead. Using default=%f." s v default;
     default
-  | e -> raise e;;
+  | e -> raise e
 
 let get_bool s =
   let b = get_var s in
-  String.lowercase_ascii b = "true" || b = "1";;
+  String.lowercase_ascii b = "true" || b = "1"
 
-debug := get_bool "DEBUG";;
-if get_bool "LOG_TO_FILE"
-then begin
+let rev_insert_theme_vars theme_path vars rest =
+  let theme_vars = load_vars theme_path in
+  List.rev_append vars (List.append theme_vars rest)
+
+(* Checks the (first) THEME entry in user's vars, and then loads & inserts the
+   theme variables. If there is no THEME entry, we add ("THEME", "default"). *)
+let load_theme_vars dir vars =
+  let rec loop newv = function
+    | [] ->
+      let value = get_var "THEME" in (* should be "default" *)
+      printd debug_io "No theme specified, using default=%s" value;
+      loop newv ["THEME", value]
+    | (name, value)::rest ->
+       if name = "THEME"
+       then
+         let theme_path = dir // value // conf_file in
+         (name, value) :: (rev_insert_theme_vars theme_path newv rest)
+       else loop ((name, value)::newv) rest
+  in
+  loop [] vars
+
+let () =
+  debug := get_bool "DEBUG";
+  if get_bool "LOG_TO_FILE"
+  then begin
     let log_file = Filename.temp_file "bogue" ".log" in
     Printf.printf "Bogue - Logging to file %s\n" log_file;
     log_channel := open_out log_file
   end
 
-(* we try to locate the theme dir *)
-(* by default it is in .config/bogue/themes. For a first run, it probably
-   doesn't exist, so we copy it from the system lib dir *)
+let download_conf () =
+  let open Printf in
+  let rescue = "bogue_conf.tgz" in
+  let cwd = Sys.getcwd () in
+  let tmpdir = Filename.temp_file "bogue" "" in
+  Sys.remove tmpdir;
+  Unix.mkdir tmpdir 0o777;
+  Sys.chdir tmpdir;
+  if Sys.command (sprintf "wget https://raw.githubusercontent.com/sanette/bogue/master/%s" rescue) <> 0
+  then failwith "Cannot download rescue config. Aborting."
+  else if Sys.command (sprintf "tar xvfz %s" rescue) <> 0
+  then failwith "Cannot extract rescue config. Aborting."
+  else if Sys.command (sprintf "mkdir -p %s/bogue" conf) <> 0
+  then failwith "Cannot create config dir. Aborting."
+  else if Sys.command (sprintf "cp -r bogue/* %s/bogue/" conf) <> 0
+  then failwith "Cannot copy config files. Aborting"
+  else print "Minimal config downloaded to %s/bogue." conf;
+  Sys.chdir cwd;
+  sprintf "%s/bogue/themes" conf
+
+(* Look for a share dir for [prog] either of the form "prefix/share/prog" or
+   "prefix/share" that contains the given [file]. This is a utility for other
+   programs using Bogue, not for Bogue itself. *)
+let find_share prog file =
+  let cwd = Sys.getcwd () in
+  let queue = Queue.create () in
+  let bin_dir = Filename.dirname Sys.executable_name in
+  let prefix_dir = Sys.chdir bin_dir; Sys.chdir ".."; Sys.getcwd () in
+  let b = Filename.basename bin_dir in
+  if b = "bin"
+  then Queue.add (prefix_dir // "share" // prog) queue;
+  if Filename.basename b = "bin"
+  then Queue.add (prefix_dir // "share") queue;
+  let () =
+    try let system = Unix.open_process_in "opam var share" in
+      let res = input_line system in
+      Queue.add (res // prog) queue
+    with _ -> () in
+  Sys.chdir cwd;
+  match Queue.fold (fun list path ->
+      if Sys.file_exists (path // file)
+      then List.cons path list else list) [] queue with
+  | [] -> printd debug_error "Cannot find share directory for %s/%s! bin_dir=%s, prefix_dir=%s"
+            prog file bin_dir prefix_dir; None
+  | path :: _ -> Some path
+
+(* We try to locate the theme dir. *)
+(* We first check [conf]/bogue/themes, then `opam var share`/bogue/themes
+
+   WARNING, when installing from a tmp dir and running `dune build @install
+   @runtest` (which is what the ocaml-ci does when submitting a new opam
+   version), then `ocamlfind query bogue` will return
+   "tmp/bogue-20220115/_build/install/default/lib/bogue", which is good (the
+   assets are installed in ../../share/), while `opam var share` returns
+   "/home/essai/.opam/4.08.1/share" which is not good because the assets are not
+   installed there yet. This is a problem only for dune testing. Once `opam
+   install .` is done, it should work.  *)
 let dir =
   let dir = get_var "DIR" in
   if Sys.file_exists dir && Sys.is_directory dir
   then dir
-  (* TODO Bogue should look for the theme in `~/.opam/bogue/share/bogue/themes/`
-     in case `~/.config/bogue/themes/` does not exist. Use `opam config var
-     prefix`/bogue/themes. See https://github.com/sanette/bogue/issues/3 *)
-  else let config = sub_file conf "bogue/themes" in
+  else let config = conf // "bogue" // "themes" in
     if Sys.file_exists config && Sys.is_directory config
     then if dir = ""
       then begin
         printd debug_warning "Using %s as bogue themes directory" config;
         config
       end else begin
-        printd debug_error "Bogue themes directory %s does not exist. Using %s instead" dir config;
+        printd debug_error
+          "Bogue themes directory %s does not exist. Using %s instead" dir config;
         config
       end
     else try
-        (* TODO use `opam config var prefix` instead of ocamlfind to remove
-           ocamlfind dependency. *)
         let system = Unix.open_process_in "ocamlfind query bogue" in
         let res = input_line system in
         match Unix.close_process_in system with
         | Unix.WEXITED 0 ->
-          let sp = Printf.sprintf in
-          let dir = sp "%s/../../share/bogue/themes" res in
+          let res = Filename.(dirname @@ dirname res) in
+          let dir = Printf.sprintf "%s/share/bogue/themes" res in
           if Sys.file_exists dir && Sys.is_directory dir
           then dir else begin
-            printd debug_error "(FATAL) Cannot create user configuration file.";
+            printd debug_error "Cannot find themes directory";
             raise Not_found
           end
-        | _ -> printd debug_error "(FATAL) Cannot find a usable bogue configuration directory";
+        | _ ->
+          printd debug_error
+            "Cannot find a usable bogue configuration directory";
           raise Not_found
       with
+      | Not_found
       | End_of_file ->
-        printd debug_error "(FATAL) Bogue configuration directory %s does not exist, and system-wide config cannot be found." dir;
-        raise Not_found
-      | e -> raise e;;
+        printd debug_error
+          "(FATAL) Bogue configuration directory %s does not exist, and \
+           system-wide config cannot be found." dir;
+        print_endline "Cannot find bogue lib directory";
+        print_endline "Trying to download a minimal Bogue config...";
+        download_conf ()
+      | e -> raise e
 
 (* Add variables from theme config file (if specified in the user config file)
-   *)
-user_vars := load_theme_vars dir !user_vars;;
-let current = sub_file dir (get_var "THEME");;
-print_endline (Printf.sprintf
-                 "Loading Bogue %s with config dir %s " this_version current);;
-let common = sub_file dir "common";;
-let fonts_dir = sub_file common "fonts";;
+*)
+let () = user_vars := load_theme_vars dir !user_vars
 
-let default_dpi = 110;;
+let current = dir // (get_var "THEME")
 
-(* try to obtain the monitor's DPI on linux systems. Does not work with multiple
-   monitors *)
-let get_dpi () =
-  try
-    let proc = Unix.open_process_in
-        "xdpyinfo | grep resolution | awk '{print $2}'" in
-    let res = input_line proc in
-    match Unix.close_process_in proc with
-    | Unix.WEXITED 0 ->
-      let i = String.index res 'x' in
-      let dpi =int_of_string (String.sub res 0 i) in
-      printd debug_graphics "Detected DPI=%u" dpi;
-      Some dpi
-    | _ -> printd debug_warning
-             "Cannot get monitor's DPI from [%s]. Using 110." res;
-      None
-  with
-  | _ -> printd debug_warning
-           "Cannot get monitor's DPI from xdpyinfo. Using 110.";
-    None;;
+let () =  print_endline
+    (Printf.sprintf "Loading Bogue %s with config dir %s" this_version current)
 
-(* A file starting with "/" is considered a global path, otherwise it will be
-   searched in the current theme directory. *)
+let common = dir // "common"
+let fonts_dir = common // "fonts"
+
+(* A file starting with "/" is considered a global path. If the file starts with
+   "%", that char is replaced by the shared bogue dir/. Otherwise it will be
+   searched in the current directory, or if it does not exist, in the current
+   theme directory. *)
 let get_path file =
-  if file = "" then failwith "Filename empty";
+  if file = "" then invalid_arg "[Theme.get_path]: filename empty";
   if file.[0] = '/' then file
-  else sub_file current file;;
+  else if file.[0] = '%'
+  then let file = String.sub file 1 (String.length file - 1) in
+    ((Filename.dirname dir) // file)
+  else if Sys.file_exists file
+  then file
+  else (printd debug_io "File %S does not exist in current dir %s"
+          file (Sys.getcwd ());
+        current // file)
 
 let get_fa_or_path s =
-  if startswith s "fa:" then s else get_path s;;
+  if startswith s "fa:" then s else get_path s
 
 (* Font names not starting with "/" are searched first in the theme directory,
    then in bogue's common fonts_dir, then in the system's fonts. *)
@@ -296,75 +371,84 @@ let get_font_path name =
          if Sys.file_exists file then file else fail () in
     (* stupid construction, I know hehe) *)
     check_file name (fun () ->
-        check_file (sub_file fonts_dir name) (fun () ->
+        check_file (fonts_dir // name) (fun () ->
             let fclist = Unix.open_process_in
                 (Printf.sprintf "fc-list : file | grep %s" name) in
-            let res = input_line fclist in
-            match Unix.close_process_in fclist with
-            | Unix.WEXITED 0 ->
-              String.sub res 0 (String.rindex res ':')
-            | _ -> printd debug_error "Cannot find font %s" name; name
+            try
+              let res = input_line fclist in
+              match Unix.close_process_in fclist with
+              | Unix.WEXITED 0 ->
+                String.sub res 0 (String.rindex res ':')
+              | _ -> printd debug_error "Cannot find font %s" name; name
+            with End_of_file -> printd debug_error "Cannot find font %s" name; name
           )
       )
 
-let background = get_var "BACKGROUND";;
-let bg_color = get_var "BG_COLOR";;
-let button_color_off = get_var "BUTTON_COLOR_OFF";;
-let button_color_on = get_var "BUTTON_COLOR_ON";;
-let check_on = get_fa_or_path (get_var "CHECK_ON");;
-let check_off = get_fa_or_path (get_var "CHECK_OFF");;
-let cursor_color = get_var "CURSOR_COLOR";;
-let faint_color = get_var "FAINT_COLOR";;
-let text_color = get_var "TEXT_COLOR";;
-let sel_bg_color = get_var "SEL_BG_COLOR";;
-let sel_fg_color = get_var "SEL_FG_COLOR";;
-let label_color = get_var "LABEL_COLOR";;
-let menu_hl_color = get_var "MENU_HL_COLOR";;
-let menu_bg_color = get_var "MENU_BG_COLOR";;
-let label_font_size = get_int ~default:14 "LABEL_FONT_SIZE";;
-let label_font = get_font_path (get_var "LABEL_FONT");;
-let text_font = get_font_path (get_var "TEXT_FONT");;
-let text_font_size = get_int ~default:14 "TEXT_FONT_SIZE";;
-let small_font_size = get_int ~default:10 "SMALL_FONT_SIZE";;
-let mono_font = get_font_path (get_var "MONO_FONT");;
-let room_margin = get_int ~default:10 "ROOM_MARGIN";;
-let fa_dir = sub_file common (get_var "FA_DIR");;
-let fa_font = sub_file fa_dir "fonts/fontawesome-webfont.ttf";;
-let scale = let s = get_float ~default:0. "SCALE" in
-  if s > 0. then s
-  else (* choose a reasonable scale. Probably not OK in case of multiple monitors. *)
-    let dpi = default (get_dpi ()) default_dpi in
-    let s = if dpi <= 110 then 1. else (float dpi /. 110.) in
-    printd debug_warning "Using SCALE=%f" s;
-    s;;
-
-
-let fa_font_size = 18;;
+let background = get_var "BACKGROUND"
+let bg_color = get_var "BG_COLOR"
+let button_color_off = get_var "BUTTON_COLOR_OFF"
+let button_color_on = get_var "BUTTON_COLOR_ON"
+let check_on = get_fa_or_path (get_var "CHECK_ON")
+let check_off = get_fa_or_path (get_var "CHECK_OFF")
+let cursor_color = get_var "CURSOR_COLOR"
+let faint_color = get_var "FAINT_COLOR"
+let text_color = get_var "TEXT_COLOR"
+let sel_bg_color = get_var "SEL_BG_COLOR"
+let sel_fg_color = get_var "SEL_FG_COLOR"
+let label_color = get_var "LABEL_COLOR"
+let menu_hl_color = get_var "MENU_HL_COLOR"
+let menu_bg_color = get_var "MENU_BG_COLOR"
+let label_font_size = get_int ~default:14 "LABEL_FONT_SIZE"
+let label_font = ref (get_font_path (get_var "LABEL_FONT"))
+let text_font = ref (get_font_path (get_var "TEXT_FONT"))
+let text_font_size = get_int ~default:14 "TEXT_FONT_SIZE"
+let small_font_size = get_int ~default:10 "SMALL_FONT_SIZE"
+let mono_font = get_font_path (get_var "MONO_FONT")
+let room_margin = get_int ~default:10 "ROOM_MARGIN"
+let fa_dir = common // (get_var "FA_DIR")
+let fa_font = fa_dir // "fonts/fontawesome-webfont.ttf"
+let integer_scale = ref (get_bool "INT_SCALE")
+let scale = ref (get_float ~default:0. "SCALE")
+let opengl_multisample = get_bool "OPENGL_MULTISAMPLE"
+let fa_font_size = 18
 
 (** some standard (?) UTF8 symbols *)
 let symbols = [
 "check_empty", "\239\130\150";
 "check", "\239\129\134";
-];;
+]
+
+let set var x = var := x
+
+let set_text_font f = text_font := get_font_path f
+let set_label_font f = label_font := get_font_path f
+
+let set_scale s =
+  let s = if !integer_scale then Float.floor s else s in
+  scale := s
+
+let set_integer_scale b =
+  integer_scale := b;
+  if b then set_scale !scale
 
 let scale_int i =
-  round (scale *. float i);;
+  round (!scale *. float i)
 
 let unscale_int i =
-  round (float i /. scale);;
+  round (float i /. !scale)
 
 let unscale_f x =
-  x /. scale;;
+  x /. !scale
 
 let scale_from_float x =
-  round (scale *. x)
+  round (!scale *. x)
 
 let unscale_to_float i =
-  scale *. (float i)
+  !scale *. (float i)
 
 (** font awesome variables *)
 let load_fa_variables () =
-  let file = sub_file fa_dir "less/variables.less" in
+  let file = fa_dir // "less" // "variables.less" in
   let buffer = Scanf.Scanning.from_file file in
   let rec loop list =
     try
@@ -382,9 +466,9 @@ let load_fa_variables () =
       loop list
     | e -> raise e
   in
-  loop [];;
+  loop []
 
-let fa_symbols = load_fa_variables ();;
+let fa_symbols = load_fa_variables ()
 (* http://fortawesome.github.io/Font-Awesome/cheatsheet/ *)
 (* http://bluejamesbond.github.io/CharacterMap/ *)
 let fa_symbol name =
@@ -392,10 +476,10 @@ let fa_symbol name =
     List.assoc name fa_symbols
   with Not_found ->
     printd debug_error "FA symbol '%s' was not found. Using 'question' instead" name;
-    List.assoc "question" fa_symbols;;
+    List.assoc "question" fa_symbols
 
 let load_colors () =
-  let file = sub_file common "colors/liste.txt" in
+  let file = common // "colors" // "liste.txt" in
   let buffer = Scanf.Scanning.from_file file in
   let rec loop list =
     try
@@ -412,12 +496,10 @@ let load_colors () =
       loop list
     | e -> raise e
   in
-  loop [];;
+  loop []
 
-let color_names = load_colors ();;
+let color_names = load_colors ()
 (* http://www.rapidtables.com/web/color/html-color-codes.htm *)
-
-
 
 
 (* some unused functions, just for me... *)
@@ -426,4 +508,4 @@ let print_bin c =
     if code = 0 then list
     else loop (code lsr 1) ((string_of_int (code land 1)) :: list)
   in
-  if c = 0 then "0" else String.concat "" (loop c []);;
+  if c = 0 then "0" else String.concat "" (loop c [])

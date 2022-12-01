@@ -23,7 +23,7 @@
 
 <pre><span id="MODULELabel"><span class="keyword">module</span> Label</span>: <code class="code"><span class="keyword">sig</span></code> <a href="Bogue.Label.html">..</a> <code class="code"><span class="keyword">end</span></code></pre><div class="info module top">
 <div class="info-desc">
-<p>One-line text widget</p>
+<p>One-line text widget.</p>
 
 <p>A <code class="code"><span class="constructor">Label</span></code> is a widget for displaying a single line of text.</p>
 
@@ -40,7 +40,7 @@
 <pre><span id="TYPEstyle"><span class="keyword">type</span> <code class="type"></code>style</span> </pre>
 
 
-<pre><span id="VALcreate"><span class="keyword">val</span> create</span> : <code class="type">?size:int -><br>       ?font:<a href="Bogue.Label.html#TYPEfont">font</a> -><br>       ?style:<a href="Bogue.Label.html#TYPEstyle">style</a> -> ?fg:<a href="Bogue.Draw.html#TYPEcolor">Draw.color</a> -> string -> <a href="Bogue.Label.html#TYPEt">t</a></code></pre><div class="info ">
+<pre><span id="VALcreate"><span class="keyword">val</span> create</span> : <code class="type">?size:int -><br>       ?font:<a href="Bogue.Label.html#TYPEfont">font</a> -><br>       ?style:<a href="Bogue.Label.html#TYPEstyle">style</a> -><br>       ?fg:<a href="Bogue.Draw.html#TYPEcolor">Draw.color</a> -> ?align:<a href="Bogue.Draw.html#TYPEalign">Draw.align</a> -> string -> <a href="Bogue.Label.html#TYPEt">t</a></code></pre><div class="info ">
 <div class="info-desc">
 <p>Create a new <a href="Bogue.Label.html#TYPEt"><code class="code"><span class="constructor">Label</span>.t</code></a>. Most of the time, you'd rather want to create a
      <a href="Bogue.Widget.html#TYPEt"><code class="code"><span class="constructor">Widget</span>.t</code></a> by using <a href="Bogue.Widget.html#VALlabel"><code class="code"><span class="constructor">Widget</span>.label</code></a>.</p>
@@ -58,7 +58,8 @@
 
 <pre><span id="VALset"><span class="keyword">val</span> set</span> : <code class="type"><a href="Bogue.Label.html#TYPEt">t</a> -> string -> unit</code></pre><div class="info ">
 <div class="info-desc">
-<p>Modify the text of the label.</p>
+<p>Modify the text of the label. Does nothing if the given text is already
+     the same as the label's previous text.</p>
 </div>
 </div>
 

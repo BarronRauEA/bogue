@@ -20,7 +20,7 @@ module Var = B_var
 module Label = B_label
 module Menu = B_menu
 module Sync = B_sync
-module Print = B_print
+(* module Print = B_print *)
 
 let pre = if !debug
   then fun s -> print_endline ("[Select] " ^ s) (* for local debugging *)
@@ -30,7 +30,7 @@ let pre = if !debug
    returns the submenu. *)
 let get_submenu menu =
   let open Menu.Engine in
-  pre (Printf.sprintf "#entries=%u" (List.length menu.entries));
+  (* pre (Printf.sprintf "#entries=%u" (List.length menu.entries)); *)
   match menu.entries with
   | [entry] -> begin
       match entry.kind with
@@ -91,7 +91,7 @@ let create ?dst ?name ?(action = fun _ -> ()) ?fg
       ]
      ]
    *)
-  pre (Print.layout_down menu_layout);
+  (* pre (Print.layout_down menu_layout); *)
   List.iter (fun l -> Layout.set_width l (w - Menu.suffix_width))
     [menu_layout;
      Layout.get_rooms menu_layout |> List.hd;
@@ -121,7 +121,7 @@ let create ?dst ?name ?(action = fun _ -> ()) ?fg
       Layout.set_height tmp_dst (Layout.height menu_layout);
       (* We need to relocate to the top layout *)
       (fun () ->
-        pre "RELOCATE!";
+        (* pre "RELOCATE!"; *)
         let room = Menu.layout_of_menu submenu in
         let screen = Layout.get_rooms tmp_dst |>
                        List.rev |>
@@ -131,16 +131,22 @@ let create ?dst ?name ?(action = fun _ -> ()) ?fg
            being in different houses, so we have to recode the resize
            function. If the menu is too big, we add a scrollbar. Note that,
            currently, this has the effect of hiding the shadow. TODO: correct
-           this...*)
+           this... TODO?[see Layout.here(++)] currently if the menu is small
+           enough, we don't add a scrollbar, and hence the scrollbar will not
+           magically happen if we shrink the window...*)
         let new_room = Layout.relocate ~scroll:true
                          ~dst:(Layout.top_house tmp_dst) room in
-        let resize _ =
+        let resize (_w, h) =
           let open Layout in
           let keep_resize = true in
           let x,y = compute_pos menu_layout in
-          let h = height menu_layout in
+          let hm = height menu_layout in
           setx ~keep_resize new_room x;
-          sety ~keep_resize new_room (y+h) in
+          sety ~keep_resize new_room (y+hm);
+          (* if h-y-hm > height new_room
+           * then print_endline "One could enlarge menu!!"; *)
+          set_height ~keep_resize new_room (imin (height room) (h-y-hm))
+        in
         new_room.Layout.resize <- resize;
 
         (* We expand the screen to full size: *)

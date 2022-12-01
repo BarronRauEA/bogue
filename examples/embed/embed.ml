@@ -5,15 +5,22 @@
 
 (* press TAB to show GUI *)
 
+(* BUG: currently you need to set BOGUE_SCALE before running this. For instance:
+
+ export BOGUE_SCALE=2 ./embed
+
+*)
+
 open Tsdl
 open Bogue
 open Utils
 module W = Widget
 module L = Layout
 
-type tmprect = { rect : Sdl.rect;
-                 color : int * int * int;
-                 created : int }
+type tmprect = {
+  rect : Sdl.rect;
+  color : int * int * int;
+  created : int }
 
 let duration = 1000 (* lifetime of a rectangle *)
 let width = 400 (* width of window in Bogue units. *)
@@ -61,14 +68,15 @@ let make_board () =
     let text = W.get_text input in
     W.set_text label ("Hello " ^ text ^ "!") in
 
-  Bogue.(make ~shortcuts:[exit_on_escape] [] [layout]), before_display
+  let shortcuts = Bogue.(shortcuts_of_list [exit_on_escape]) in
+  Bogue.(of_layout ~shortcuts layout), before_display
 
 let main () =
   Sys.catch_break true;
   go(Sdl.init Sdl.Init.video);
   let w,h = Theme.(scale_int width, scale_int height) in
-  let win = go(Sdl.create_window ~w ~h
-                 "Test Window" Sdl.Window.windowed) in
+  let win = go(Sdl.create_window ~w ~h "Test Window"
+                 Sdl.Window.(windowed + allow_highdpi + opengl + resizable)) in
   let renderer = go(Sdl.create_renderer win) in
   (* very important: set blend mode: *)
   go (Sdl.set_render_draw_blend_mode renderer Sdl.Blend.mode_blend);
